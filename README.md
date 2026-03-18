@@ -24,6 +24,13 @@ CLI 또는 Redis 클라이언트와의 연동 편의를 위해 아래 명령도 
 - `CLIENT SETINFO`
 - `HELLO`
 
+세부 규칙:
+
+- `CLIENT SETINFO <LIB-NAME|LIB-VER> <value>` 형식만 허용합니다.
+- `HELLO`는 인자 없이 호출하거나 `HELLO 2`만 허용합니다.
+- `INFO`는 인자 없이 전체 정보를 반환하고, `INFO server`, `INFO stats` 섹션 조회를 지원합니다.
+- `CLIENT`, `HELLO`, `INFO`의 잘못된 인자 개수는 `wrong number of arguments for '...' command` 형식의 에러를 반환합니다.
+
 ## 실행
 
 ```bash

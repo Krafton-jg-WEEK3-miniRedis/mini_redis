@@ -94,7 +94,7 @@ class CommandRouter:
                 return RouteResult(self._handle_hello(command, client_id))
 
             if name == b"INFO":
-                return RouteResult(Reply.bulk(self._build_info()))
+                return RouteResult(self._handle_info(command))
 
             if name in {b"QUIT", b"EXIT"}:
                 self._require_arity(command, 1)
@@ -106,14 +106,22 @@ class CommandRouter:
         return RouteResult(Reply.error(f"unknown command '{decoded}'"))
 
     def _handle_client(self, command: list[bytes]) -> Reply:
-        if len(command) >= 2 and command[1].upper() == b"SETINFO":
-            return Reply.simple("OK")
-        return Reply.error("unsupported CLIENT subcommand")
+        self._require_min_arity_for_command(command, minimum=2, name="client")
+        subcommand = command[1].upper()
+        if subcommand != b"SETINFO":
+            decoded = command[1].decode("utf-8", errors="replace")
+            return Reply.error(f"unknown subcommand '{decoded}' for CLIENT")
+
+        self._require_arity_for_command(command, expected=4, name="client")
+        option = command[2].upper()
+        if option not in {b"LIB-NAME", b"LIB-VER"}:
+            decoded = command[2].decode("utf-8", errors="replace")
+            return Reply.error(f"unsupported CLIENT SETINFO option '{decoded}'")
+        return Reply.simple("OK")
 
     def _handle_hello(self, command: list[bytes], client_id: int) -> Reply:
-        if len(command) > 2:
-            return Reply.error("unsupported HELLO arguments")
-        if len(command) == 2 and command[1] not in {b"2", b"3"}:
+        self._require_range_arity_for_command(command, minimum=1, maximum=2, name="hello")
+        if len(command) == 2 and command[1] != b"2":
             return Reply.error("unsupported protocol version", code="NOPROTO")
 
         return Reply.array(
@@ -135,16 +143,27 @@ class CommandRouter:
             ]
         )
 
-    def _build_info(self) -> bytes:
+    def _handle_info(self, command: list[bytes]) -> Reply:
+        self._require_range_arity_for_command(command, minimum=1, maximum=2, name="info")
+        section = command[1].lower() if len(command) == 2 else b"default"
+        return Reply.bulk(self._build_info(section))
+
+    def _build_info(self, section: bytes = b"default") -> bytes:
         total_connections, total_commands = self._stats.get_stats()
-        return (
-            b"# Server\r\n"
-            b"redis_version:0.2.0\r\n"
-            b"redis_mode:standalone\r\n"
+        server_section = b"# Server\r\n" b"redis_version:0.2.0\r\n" b"redis_mode:standalone\r\n"
+        stats_section = (
             b"# Stats\r\n"
             + f"total_connections_received:{total_connections}\r\n".encode()
             + f"total_commands_processed:{total_commands}\r\n".encode()
         )
+
+        if section in {b"default", b"all", b"everything"}:
+            return server_section + stats_section
+        if section == b"server":
+            return server_section
+        if section == b"stats":
+            return stats_section
+        return b""
 
     def _require_arity(self, command: list[bytes], expected: int) -> None:
         if len(command) != expected:
@@ -160,3 +179,18 @@ class CommandRouter:
             raise ValueError(
                 f"wrong number of arguments (expected between {minimum - 1} and {maximum - 1})"
             )
+
+    def _require_arity_for_command(self, command: list[bytes], expected: int, name: str) -> None:
+        if len(command) != expected:
+            raise ValueError(f"wrong number of arguments for '{name}' command")
+
+    def _require_min_arity_for_command(self, command: list[bytes], minimum: int, name: str) -> None:
+        if len(command) < minimum:
+            raise ValueError(f"wrong number of arguments for '{name}' command")
+
+    def _require_range_arity_for_command(
+        self, command: list[bytes], minimum: int, maximum: int, name: str
+    ) -> None:
+        actual = len(command)
+        if actual < minimum or actual > maximum:
+            raise ValueError(f"wrong number of arguments for '{name}' command")
