@@ -27,3 +27,5 @@
 - Keep branch names consistent across the team.
 - Choose the type based on the main purpose of the change.
 - If multiple changes are mixed, name the branch after the highest-impact task.
+- Write commit messages in Korean.
+- When implementing a feature, make small commits so the team can understand the work in clear units.
