@@ -84,6 +84,15 @@ class CommandRouter:
 
                 return RouteResult(Reply.integer(1 if updated else 0))
 
+            if name == b"TTL":
+                self._require_arity(command, 2)
+                return RouteResult(Reply.integer(self._store.ttl(command[1])))
+
+            if name == b"PERSIST":
+                self._require_arity(command, 2)
+                restored = self._store.persist(command[1])
+                return RouteResult(Reply.integer(1 if restored else 0))
+
             if name == b"COMMAND":
                 return RouteResult(Reply.array([]))
 
@@ -150,19 +159,30 @@ class CommandRouter:
 
     def _build_info(self, section: bytes = b"default") -> bytes:
         total_connections, total_commands = self._stats.get_stats()
+        store_stats = self._store.get_stats()
         server_section = b"# Server\r\n" b"redis_version:0.2.0\r\n" b"redis_mode:standalone\r\n"
         stats_section = (
             b"# Stats\r\n"
             + f"total_connections_received:{total_connections}\r\n".encode()
             + f"total_commands_processed:{total_commands}\r\n".encode()
         )
+        store_section = (
+            b"# Store\r\n"
+            + f"keys:{store_stats.size}\r\n".encode()
+            + f"capacity:{store_stats.capacity}\r\n".encode()
+            + f"load_factor:{store_stats.load_factor:.6f}\r\n".encode()
+            + f"resize_count:{store_stats.resize_count}\r\n".encode()
+            + f"expired_removed_count:{store_stats.expired_removed_count}\r\n".encode()
+        )
 
         if section in {b"default", b"all", b"everything"}:
-            return server_section + stats_section
+            return server_section + stats_section + store_section
         if section == b"server":
             return server_section
         if section == b"stats":
             return stats_section
+        if section == b"store":
+            return store_section
         return b""
 
     def _require_arity(self, command: list[bytes], expected: int) -> None:

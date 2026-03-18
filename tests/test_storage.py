@@ -128,6 +128,70 @@ class HashTableStoreTests(unittest.TestCase):
 
         self.assertEqual(store.load_factor, 0.5)
 
+    def test_persist_removes_existing_expiration(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(clock=clock)
+        store.set(b"session", b"token")
+        self.assertTrue(store.expire(b"session", 5))
+
+        self.assertTrue(store.persist(b"session"))
+        clock.advance(10)
+
+        self.assertEqual(store.get(b"session"), b"token")
+
+    def test_persist_returns_false_for_missing_or_non_expiring_key(self) -> None:
+        store = HashTableStore()
+        store.set(b"session", b"token")
+
+        self.assertFalse(store.persist(b"missing"))
+        self.assertFalse(store.persist(b"session"))
+
+    def test_ttl_returns_remaining_seconds_for_expiring_key(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(clock=clock)
+        store.set(b"session", b"token")
+        self.assertTrue(store.expire(b"session", 5))
+
+        self.assertEqual(store.ttl(b"session"), 5)
+        clock.advance(2)
+        self.assertEqual(store.ttl(b"session"), 3)
+
+    def test_ttl_returns_minus_one_for_persistent_key(self) -> None:
+        store = HashTableStore()
+        store.set(b"session", b"token")
+
+        self.assertEqual(store.ttl(b"session"), -1)
+
+    def test_ttl_returns_zero_for_missing_or_expired_key(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(clock=clock)
+        store.set(b"session", b"token")
+        self.assertTrue(store.expire(b"session", 1))
+        clock.advance(2)
+
+        self.assertEqual(store.ttl(b"missing"), 0)
+        self.assertEqual(store.ttl(b"session"), 0)
+        self.assertEqual(len(store), 0)
+
+    def test_active_expiration_cleans_expired_keys_during_writes(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(
+            bucket_count=1,
+            clock=clock,
+            active_expiration_writes=1,
+            active_expiration_bucket_count=1,
+        )
+        store.set(b"stale", b"old")
+        self.assertTrue(store.expire(b"stale", 1))
+        clock.advance(2)
+
+        store.set(b"fresh", b"new")
+
+        self.assertEqual(len(store), 1)
+        self.assertIsNone(store.get(b"stale"))
+        self.assertEqual(store.get(b"fresh"), b"new")
+        self.assertEqual(store.expired_removed_count, 1)
+
     def test_snapshot_tracks_resize_and_expired_cleanup(self) -> None:
         clock = FakeClock()
         store = HashTableStore(bucket_count=2, load_factor_threshold=0.5, clock=clock)
