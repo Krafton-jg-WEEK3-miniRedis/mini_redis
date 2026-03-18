@@ -128,6 +128,24 @@ class HashTableStoreTests(unittest.TestCase):
 
         self.assertEqual(store.load_factor, 0.5)
 
+    def test_persist_removes_existing_expiration(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(clock=clock)
+        store.set(b"session", b"token")
+        self.assertTrue(store.expire(b"session", 5))
+
+        self.assertTrue(store.persist(b"session"))
+        clock.advance(10)
+
+        self.assertEqual(store.get(b"session"), b"token")
+
+    def test_persist_returns_false_for_missing_or_non_expiring_key(self) -> None:
+        store = HashTableStore()
+        store.set(b"session", b"token")
+
+        self.assertFalse(store.persist(b"missing"))
+        self.assertFalse(store.persist(b"session"))
+
     def test_snapshot_tracks_resize_and_expired_cleanup(self) -> None:
         clock = FakeClock()
         store = HashTableStore(bucket_count=2, load_factor_threshold=0.5, clock=clock)

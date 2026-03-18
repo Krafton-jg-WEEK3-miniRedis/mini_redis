@@ -21,6 +21,12 @@ class KeyValueStore(Protocol):
     def expire(self, key: bytes, seconds: int) -> bool:
         ...
 
+    def persist(self, key: bytes) -> bool:
+        ...
+
+    def get_stats(self) -> StoreStats:
+        ...
+
 
 @dataclass(slots=True)
 class HashEntry:
@@ -147,6 +153,21 @@ class HashTableStore:
             entry.expires_at = self._clock() + seconds
             if self._is_expired(entry):
                 self._remove_from_bucket(bucket, index, expired=True)
+            return True
+
+    def persist(self, key: bytes) -> bool:
+        with self._lock:
+            bucket = self._bucket_for(key)
+            index, entry = self._locate(bucket, key)
+            if entry is None:
+                return False
+            if self._is_expired(entry):
+                self._remove_from_bucket(bucket, index, expired=True)
+                return False
+            if entry.expires_at is None:
+                return False
+
+            entry.expires_at = None
             return True
 
     def __len__(self) -> int:

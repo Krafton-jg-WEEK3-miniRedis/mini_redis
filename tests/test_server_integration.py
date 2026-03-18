@@ -82,6 +82,34 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
             self.assertEqual(read_reply(stream), b":1\r\n")
             self.assertEqual(read_reply(stream), b"$-1\r\n")
 
+    def test_persist_command_keeps_key_available(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            stream = conn.makefile("rwb")
+            stream.write(encode_command(b"SET", b"session", b"cached"))
+            stream.write(encode_command(b"EXPIRE", b"session", b"10"))
+            stream.write(encode_command(b"PERSIST", b"session"))
+            stream.write(encode_command(b"GET", b"session"))
+            stream.flush()
+
+            self.assertEqual(read_reply(stream), b"+OK\r\n")
+            self.assertEqual(read_reply(stream), b":1\r\n")
+            self.assertEqual(read_reply(stream), b":1\r\n")
+            self.assertEqual(read_reply(stream), b"$6\r\ncached\r\n")
+
+    def test_info_command_includes_store_stats(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            stream = conn.makefile("rwb")
+            stream.write(encode_command(b"SET", b"team", b"three"))
+            stream.write(encode_command(b"INFO"))
+            stream.flush()
+
+            self.assertEqual(read_reply(stream), b"+OK\r\n")
+            info_reply = read_reply(stream)
+            self.assertIn(b"# Store\r\n", info_reply)
+            self.assertIn(b"keys:1\r\n", info_reply)
+            self.assertIn(b"capacity:64\r\n", info_reply)
+            self.assertIn(b"load_factor:", info_reply)
+
 
 if __name__ == "__main__":
     unittest.main()

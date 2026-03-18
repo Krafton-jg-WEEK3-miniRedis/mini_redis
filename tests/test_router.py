@@ -30,6 +30,28 @@ class CommandRouterTest(unittest.TestCase):
         self.assertEqual(expire_result.reply.value, 1)
         self.assertIsNone(self.store.get(b"temp"))
 
+    def test_persist_removes_expiration(self) -> None:
+        self.router.dispatch([b"SET", b"temp", b"value"], 1)
+        self.router.dispatch([b"EXPIRE", b"temp", b"10"], 1)
+
+        persist_result = self.router.dispatch([b"PERSIST", b"temp"], 1)
+
+        self.assertEqual(persist_result.reply.kind, "integer")
+        self.assertEqual(persist_result.reply.value, 1)
+
+    def test_info_includes_store_stats(self) -> None:
+        self.router.dispatch([b"SET", b"alpha", b"1"], 1)
+
+        result = self.router.dispatch([b"INFO"], 1)
+
+        self.assertEqual(result.reply.kind, "bulk")
+        self.assertIn(b"# Store\r\n", result.reply.value)
+        self.assertIn(b"keys:1\r\n", result.reply.value)
+        self.assertIn(b"capacity:64\r\n", result.reply.value)
+        self.assertIn(b"load_factor:", result.reply.value)
+        self.assertIn(b"resize_count:0\r\n", result.reply.value)
+        self.assertIn(b"expired_removed_count:0\r\n", result.reply.value)
+
     def test_exit_and_quit_close_connection(self) -> None:
         self.assertTrue(self.router.dispatch([b"EXIT"], 1).close_connection)
         self.assertTrue(self.router.dispatch([b"QUIT"], 1).close_connection)
