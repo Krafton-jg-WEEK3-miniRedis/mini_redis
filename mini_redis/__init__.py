@@ -1,6 +1,6 @@
 from .router import CommandRouter, RouteResult, ServerStats
 from .server import MiniRedisTCPServer, serve
-from .storage import HashTableStore, KeyValueStore
+from .storage import HashTableStore, KeyValueStore, StoreStats
 
 __all__ = [
     "CommandRouter",
@@ -9,5 +9,6 @@ __all__ = [
     "MiniRedisTCPServer",
     "RouteResult",
     "ServerStats",
+    "StoreStats",
     "serve",
 ]
