@@ -3,8 +3,9 @@ import itertools
 import socketserver
 from typing import Any
 
+from mini_redis.storage import HashTableStore, KeyValueStore
 
-STORE: dict[bytes, bytes] = {}
+STORE: KeyValueStore = HashTableStore()
 CLIENT_IDS = itertools.count(1)
 
 
@@ -90,17 +91,21 @@ class MiniRedisHandler(socketserver.StreamRequestHandler):
                 self.write_bulk(command[1])
             elif name == b"SET":
                 self.require_arity(command, 3)
-                STORE[command[1]] = command[2]
+                STORE.set(command[1], command[2])
                 self.write_simple("OK")
             elif name == b"GET":
                 self.require_arity(command, 2)
                 self.write_bulk(STORE.get(command[1]))
             elif name == b"DEL":
                 self.require_min_arity(command, 2)
-                deleted = 0
-                for key in command[1:]:
-                    deleted += 1 if STORE.pop(key, None) is not None else 0
-                self.write_integer(deleted)
+                self.write_integer(STORE.delete(command[1:]))
+            elif name == b"EXPIRE":
+                self.require_arity(command, 3)
+                try:
+                    seconds = int(command[2])
+                except ValueError as exc:
+                    raise RespError("value is not an integer or out of range") from exc
+                self.write_integer(1 if STORE.expire(command[1], seconds) else 0)
             elif name == b"COMMAND":
                 self.write_array([])
             elif name == b"CLIENT":

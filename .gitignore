@@ -1,2 +1,4 @@
 .vscode
 sftp.json
+__pycache__/
+*.pyc
