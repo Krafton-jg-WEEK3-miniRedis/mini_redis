@@ -1,0 +1,3 @@
+mini redis listening on 127.0.0.1:6380
+[connect] id=1 127.0.0.1:49470
+[disconnect] id=1 127.0.0.1:49470
