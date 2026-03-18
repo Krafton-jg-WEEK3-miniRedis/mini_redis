@@ -100,6 +100,73 @@ class CommandRouterTest(unittest.TestCase):
         self.assertEqual(result.reply.kind, "error")
         self.assertIn("unknown command", result.reply.value)
 
+    def test_hello_rejects_unsupported_protocol_version(self) -> None:
+        result = self.router.dispatch([b"HELLO", b"9"], 7)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.error_code, "NOPROTO")
+        self.assertIn("unsupported protocol version", result.reply.value)
+
+    def test_hello_rejects_wrong_number_of_arguments(self) -> None:
+        result = self.router.dispatch([b"HELLO", b"2", b"EXTRA"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.value, "wrong number of arguments for 'hello' command")
+
+    def test_client_accepts_setinfo(self) -> None:
+        result = self.router.dispatch([b"CLIENT", b"SETINFO", b"LIB-NAME", b"mini-redis-cli"], 1)
+
+        self.assertEqual(result.reply.kind, "simple")
+        self.assertEqual(result.reply.value, "OK")
+
+    def test_client_rejects_unsupported_subcommand(self) -> None:
+        result = self.router.dispatch([b"CLIENT", b"LIST"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.value, "unknown subcommand 'LIST' for CLIENT")
+
+    def test_client_rejects_wrong_number_of_arguments_for_setinfo(self) -> None:
+        result = self.router.dispatch([b"CLIENT", b"SETINFO", b"LIB-NAME"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.value, "wrong number of arguments for 'client' command")
+
+    def test_client_rejects_unsupported_setinfo_option(self) -> None:
+        result = self.router.dispatch([b"CLIENT", b"SETINFO", b"ID", b"client-1"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.value, "unsupported CLIENT SETINFO option 'ID'")
+
+    def test_info_contains_connection_and_command_stats(self) -> None:
+        self.stats.register_connection()
+        self.stats.mark_command_processed()
+        self.stats.mark_command_processed()
+
+        result = self.router.dispatch([b"INFO"], 1)
+
+        self.assertEqual(result.reply.kind, "bulk")
+        self.assertIn(b"total_connections_received:1", result.reply.value)
+        self.assertIn(b"total_commands_processed:2", result.reply.value)
+
+    def test_info_supports_server_section(self) -> None:
+        result = self.router.dispatch([b"INFO", b"server"], 1)
+
+        self.assertEqual(result.reply.kind, "bulk")
+        self.assertIn(b"# Server", result.reply.value)
+        self.assertNotIn(b"# Stats", result.reply.value)
+
+    def test_info_returns_empty_payload_for_unknown_section(self) -> None:
+        result = self.router.dispatch([b"INFO", b"memory"], 1)
+
+        self.assertEqual(result.reply.kind, "bulk")
+        self.assertEqual(result.reply.value, b"")
+
+    def test_info_rejects_wrong_number_of_arguments(self) -> None:
+        result = self.router.dispatch([b"INFO", b"server", b"extra"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.value, "wrong number of arguments for 'info' command")
+
 
 if __name__ == "__main__":
     unittest.main()
