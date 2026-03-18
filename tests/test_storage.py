@@ -1,3 +1,4 @@
+import threading
 import unittest
 
 from mini_redis.storage import HashTableStore
@@ -126,6 +127,65 @@ class HashTableStoreTests(unittest.TestCase):
         store.set(b"beta", b"2")
 
         self.assertEqual(store.load_factor, 0.5)
+
+    def test_snapshot_tracks_resize_and_expired_cleanup(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(bucket_count=2, load_factor_threshold=0.5, clock=clock)
+
+        store.set(b"stale", b"old")
+        self.assertTrue(store.expire(b"stale", 1))
+        clock.advance(2)
+        self.assertIsNone(store.get(b"stale"))
+
+        store.set(b"alpha", b"1")
+        store.set(b"beta", b"2")
+
+        stats = store.get_stats()
+
+        self.assertEqual(stats.size, 2)
+        self.assertEqual(stats.capacity, 4)
+        self.assertEqual(stats.load_factor, 0.5)
+        self.assertEqual(stats.resize_count, 1)
+        self.assertEqual(stats.expired_removed_count, 1)
+
+    def test_snapshot_is_consistent_after_concurrent_access(self) -> None:
+        store = HashTableStore(bucket_count=4, load_factor_threshold=0.75)
+        worker_count = 6
+        iterations = 80
+        errors: list[BaseException] = []
+        error_lock = threading.Lock()
+        start = threading.Barrier(worker_count)
+
+        def worker(worker_id: int) -> None:
+            try:
+                start.wait()
+                for index in range(iterations):
+                    key = f"worker:{worker_id}:{index}".encode()
+                    store.set(key, b"value")
+                    self.assertEqual(store.get(key), b"value")
+                    if index % 4 == 0:
+                        self.assertTrue(store.expire(key, 0))
+                        self.assertIsNone(store.get(key))
+                    else:
+                        self.assertEqual(store.delete([key]), 1)
+            except BaseException as exc:  # pragma: no cover - surfaced by the test assertions below
+                with error_lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(worker_id,)) for worker_id in range(worker_count)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+
+        self.assertFalse(errors, errors)
+        stats = store.get_stats()
+        expired_per_worker = sum(1 for index in range(iterations) if index % 4 == 0)
+        self.assertEqual(stats.size, 0)
+        self.assertEqual(stats.capacity, store.capacity)
+        self.assertEqual(stats.load_factor, 0.0)
+        self.assertEqual(stats.expired_removed_count, worker_count * expired_per_worker)
 
 
 if __name__ == "__main__":
