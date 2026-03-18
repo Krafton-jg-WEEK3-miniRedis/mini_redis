@@ -130,7 +130,7 @@ class CommandRouter:
 
     def _handle_hello(self, command: list[bytes], client_id: int) -> Reply:
         self._require_range_arity_for_command(command, minimum=1, maximum=2, name="hello")
-        if len(command) == 2 and command[1] not in {b"2", b"3"}:
+        if len(command) == 2 and command[1] != b"2":
             return Reply.error("unsupported protocol version", code="NOPROTO")
 
         return Reply.array(

@@ -20,6 +20,8 @@ CLI 또는 Redis 클라이언트와의 연동 편의를 위해 아래 명령도 
 
 - `ECHO`
 - `EXPIRE`
+- `TTL`
+- `PERSIST`
 - `COMMAND`
 - `CLIENT SETINFO`
 - `HELLO`
@@ -27,8 +29,9 @@ CLI 또는 Redis 클라이언트와의 연동 편의를 위해 아래 명령도 
 세부 규칙:
 
 - `CLIENT SETINFO <LIB-NAME|LIB-VER> <value>` 형식만 허용합니다.
-- `HELLO`는 인자 없이 호출하거나 `HELLO 2`, `HELLO 3`을 허용합니다.
-- `INFO`는 인자 없이 전체 정보를 반환하고, `INFO server`, `INFO stats` 섹션 조회를 지원합니다.
+- `HELLO`는 인자 없이 호출하거나 `HELLO 2`만 허용합니다.
+- `INFO`는 인자 없이 전체 정보를 반환하고, `INFO server`, `INFO stats`, `INFO store` 섹션 조회를 지원합니다.
+- `TTL`, `PERSIST`를 통해 만료 상태를 조회하거나 해제할 수 있습니다.
 - `CLIENT`, `HELLO`, `INFO`의 잘못된 인자 개수는 `wrong number of arguments for '...' command` 형식의 에러를 반환합니다.
 
 ## 실행
@@ -48,8 +51,8 @@ python3 -m unittest discover -s tests -v
 테스트 구성:
 
 - `tests/test_storage.py`: 해시 충돌, overwrite, lazy expiration, resize 검증
-- `tests/test_router.py`: 명령 라우팅, 인자 수 오류, 보조 명령 에러 처리 검증
-- `tests/test_server_integration.py`: TCP round trip, 잘못된 RESP, 연결 종료 동작 검증
+- `tests/test_router.py`: 명령 라우팅, 만료 명령, 인자 수 오류, 보조 명령 에러 처리 검증
+- `tests/test_server_integration.py`: TCP round trip, 만료 명령, 잘못된 RESP, 연결 종료 동작 검증
 - `tests/test_cli.py`: interactive CLI 안내문과 사용자 입력 흐름 검증
 
 ## 구조
@@ -62,7 +65,7 @@ python3 -m unittest discover -s tests -v
 
 ## 협업 경계
 
-- 서버/라우터는 `KeyValueStore` 프로토콜의 `set/get/delete/expire`만 사용합니다.
+- 서버/라우터는 `KeyValueStore` 프로토콜의 `set/get/delete/expire/ttl/persist/get_stats`를 사용합니다.
 - 저장소 내부 자료구조는 서버가 직접 참조하지 않습니다.
 - 종료 명령은 Redis 호환성을 위해 `QUIT`, 팀 요구사항을 위해 `EXIT`를 함께 지원합니다.
 
