@@ -78,6 +78,17 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
             conn.sendall(b"*1\r\n+PING\r\n")
             self.assertEqual(conn.recv(1024), b"-ERR expected bulk string\r\n")
 
+    def test_null_bulk_string_returns_error(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            conn.sendall(b"*1\r\n$-1\r\n")
+            self.assertEqual(conn.recv(1024), b"-ERR null bulk string is not supported in commands\r\n")
+
+    def test_truncated_bulk_data_returns_error(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            conn.sendall(b"*1\r\n$4\r\nPI")
+            conn.shutdown(socket.SHUT_WR)
+            self.assertEqual(conn.recv(1024), b"-ERR incomplete bulk data\r\n")
+
     def test_invalid_bulk_terminator_returns_error(self) -> None:
         with socket.create_connection((self.host, self.port), timeout=2) as conn:
             conn.sendall(b"*1\r\n$4\r\nPINGxx")

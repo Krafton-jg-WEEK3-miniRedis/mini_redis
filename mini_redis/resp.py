@@ -57,10 +57,14 @@ class RespReader:
             count = int(first_line[1:].strip())
         except ValueError as exc:
             raise RespError("invalid multibulk length") from exc
+        if count < 0:
+            raise RespError("invalid multibulk length")
 
         parts: list[bytes] = []
         for _ in range(count):
             length_line = self._source.readline()
+            if not length_line:
+                raise RespError("unexpected end of stream")
             if not length_line.startswith(b"$"):
                 raise RespError("expected bulk string")
 
@@ -69,12 +73,17 @@ class RespReader:
             except ValueError as exc:
                 raise RespError("invalid bulk length") from exc
 
-            if length < 0:
-                parts.append(b"")
-                continue
+            if length == -1:
+                raise RespError("null bulk string is not supported in commands")
+            if length < -1:
+                raise RespError("invalid bulk length")
 
             data = self._source.read(length)
+            if len(data) != length:
+                raise RespError("incomplete bulk data")
             trailing = self._source.read(2)
+            if len(trailing) != 2:
+                raise RespError("incomplete bulk data")
             if trailing != b"\r\n":
                 raise RespError("invalid bulk terminator")
             parts.append(data)
