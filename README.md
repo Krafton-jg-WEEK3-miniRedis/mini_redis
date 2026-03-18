@@ -168,6 +168,65 @@ python3 -m unittest discover -s tests -v
 - `tests/test_cli.py`: CLI interactive 흐름과 안내문 검증
 - `tests/test_persistence.py`: 스냅샷 저장/복구와 잘못된 스냅샷 입력 검증
 
+### 최근 실행 결과
+
+기준 일시: 2026-03-18 (KST)
+
+- 전체 자동 테스트: `63개 테스트 통과`, 총 실행 시간 `8.057s`
+- 기능 검증 범위:
+  - 저장소 단위 테스트
+  - RESP 파서 경계 입력 테스트
+  - 서버 라우팅 테스트
+  - TCP 통합 테스트
+  - CLI 동작 테스트
+  - 스냅샷 persistence 테스트
+
+핵심적으로 확인된 항목:
+
+- 외부 TCP 클라이언트가 `PING`, `SET`, `GET`, `DEL`, `EXPIRE`, `TTL`, `PERSIST`, `INFO`, `QUIT`, `EXIT`를 사용할 수 있는지 검증
+- 잘못된 RESP, null bulk string, truncated bulk data, invalid bulk terminator 같은 엣지 케이스를 에러로 처리하는지 검증
+- 만료 키의 lazy expiration, active expiration, TTL 제거, snapshot save/load가 기대대로 동작하는지 검증
+- CLI interactive 모드에서 welcome/help/blank input 흐름이 정상 동작하는지 검증
+
+### 벤치마크 결과
+
+저장소 마이크로벤치마크 (`python3 benchmarks/storage_benchmark.py`)
+
+| 대상 | key 수 | SET | GET | DEL |
+| --- | ---: | ---: | ---: | ---: |
+| `HashTableStore` | 1,000 | 0.001023s | 0.000330s | 0.000324s |
+| `DictStore` | 1,000 | 0.000063s | 0.000033s | 0.000035s |
+| `HashTableStore` | 10,000 | 0.009240s | 0.003285s | 0.003134s |
+| `DictStore` | 10,000 | 0.000589s | 0.000426s | 0.000346s |
+| `HashTableStore` | 50,000 | 0.054173s | 0.016635s | 0.018080s |
+| `DictStore` | 50,000 | 0.002936s | 0.001637s | 0.001711s |
+
+해석:
+
+- Python 내장 `dict` 자체 성능은 커스텀 해시 테이블보다 빠릅니다.
+- 하지만 이번 프로젝트의 목적은 단순 최고 속도가 아니라, Redis 저장소의 충돌 처리, resize, TTL, 무효화, 통계 노출을 직접 제어하는 저장소를 구현하는 데 있습니다.
+
+TCP 부하 테스트 (`python3 benchmarks/tcp_stress_test.py`)
+
+안정적으로 통과한 기준:
+
+- `PING`, `500 requests`, `concurrency=20`: `0.143s`, `3499.49 req/s`, `success=500`, `failure=0`
+- `SET`, `500 requests`, `concurrency=20`: `0.093s`, `5356.86 req/s`, `success=500`, `failure=0`
+
+고동시성에서 확인된 엣지 케이스:
+
+- `PING`, `5000 requests`, `concurrency=500`: `success=4797`, `failure=203`, 주된 실패 원인은 `TimeoutError`
+- `SET`, `3000 requests`, `concurrency=300`: `success=2917`, `failure=83`, 주된 실패 원인은 `TimeoutError`
+
+즉, 현재 구현은 일반적인 기능 사용과 중간 수준의 TCP 요청에서는 정상 동작하지만, 높은 동시성 부하에서는 타임아웃 튜닝이나 서버 구조 개선이 더 필요합니다.
+
+### 요구사항 대비 상태
+
+- 기능 테스트와 엣지 케이스 테스트는 현재 저장소 안의 자동화 테스트로 검증했습니다.
+- Mini Redis 자체의 저장소/서버 성능 측정 결과도 위와 같이 재현 가능합니다.
+- 다만 "웹에서 MongoDB 직접 조회"와 "웹에서 Mini Redis(TCP) 조회"를 같은 데이터셋으로 반복 비교하는 자동화 벤치마크 결과는 현재 이 저장소 안에 별도 스크립트로 포함되어 있지 않습니다.
+- 해당 비교는 현재 demo web 구조에서 수행할 수 있지만, README에 넣을 자동화 수치로 고정하려면 MongoDB 비교 전용 스크립트 또는 측정 로그를 추가로 관리하는 편이 맞습니다.
+
 ## 팀 역할 기준 정리
 
 - 1번 팀원: 데모 웹과 MongoDB 비교 시나리오, 발표 흐름 정리
