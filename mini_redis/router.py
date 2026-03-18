@@ -84,6 +84,10 @@ class CommandRouter:
 
                 return RouteResult(Reply.integer(1 if updated else 0))
 
+            if name == b"TTL":
+                self._require_arity(command, 2)
+                return RouteResult(Reply.integer(self._store.ttl(command[1])))
+
             if name == b"PERSIST":
                 self._require_arity(command, 2)
                 restored = self._store.persist(command[1])
