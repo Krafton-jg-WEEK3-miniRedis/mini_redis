@@ -31,9 +31,22 @@ class KeyValueStore(Protocol):
     def get_stats(self) -> StoreStats:
         ...
 
+    def dump_snapshot(self) -> list[SnapshotEntry]:
+        ...
+
+    def restore_snapshot(self, entries: Iterable[SnapshotEntry]) -> int:
+        ...
+
 
 @dataclass(slots=True)
 class HashEntry:
+    key: bytes
+    value: bytes
+    expires_at: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotEntry:
     key: bytes
     value: bytes
     expires_at: float | None = None
@@ -216,6 +229,40 @@ class HashTableStore:
         with self._lock:
             return self._size
 
+    def dump_snapshot(self) -> list[SnapshotEntry]:
+        with self._lock:
+            now = self._clock()
+            entries: list[SnapshotEntry] = []
+            for bucket in self._buckets:
+                self._remove_expired_entries(bucket, now=now)
+                for entry in bucket:
+                    entries.append(
+                        SnapshotEntry(
+                            key=entry.key,
+                            value=entry.value,
+                            expires_at=entry.expires_at,
+                        )
+                    )
+            return entries
+
+    def restore_snapshot(self, entries: Iterable[SnapshotEntry]) -> int:
+        with self._lock:
+            self._reset_state()
+            restored = 0
+            now = self._clock()
+            for entry in entries:
+                if entry.expires_at is not None and entry.expires_at <= now:
+                    continue
+
+                self._bucket_for(entry.key).append(
+                    HashEntry(key=entry.key, value=entry.value, expires_at=entry.expires_at)
+                )
+                self._size += 1
+                restored += 1
+                while self._current_load_factor() > self._load_factor_threshold:
+                    self._resize(len(self._buckets) * 2)
+            return restored
+
     def _bucket_for(self, key: bytes) -> list[HashEntry]:
         return self._buckets[self._bucket_index(key)]
 
@@ -259,6 +306,14 @@ class HashTableStore:
 
     def _current_load_factor(self) -> float:
         return self._size / len(self._buckets)
+
+    def _reset_state(self) -> None:
+        self._buckets = [[] for _ in range(len(self._buckets))]
+        self._writes_since_cleanup = 0
+        self._active_expiration_cursor = 0
+        self._size = 0
+        self._resize_count = 0
+        self._expired_removed_count = 0
 
     def _record_write(self) -> None:
         self._writes_since_cleanup += 1
