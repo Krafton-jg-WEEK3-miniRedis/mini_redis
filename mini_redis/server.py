@@ -3,6 +3,7 @@ from __future__ import annotations
 import socketserver
 from typing import cast
 
+from .persistence import SnapshotPersistence
 from .resp import Reply, RespError, RespReader, RespWriter
 from .router import CommandRouter, ServerStats
 from .storage import HashTableStore, KeyValueStore
@@ -44,15 +45,38 @@ class MiniRedisTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, server_address: tuple[str, int], store: KeyValueStore | None = None) -> None:
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        store: KeyValueStore | None = None,
+        snapshot_path: str | None = None,
+    ) -> None:
         self.stats = ServerStats()
         self.store = store or HashTableStore()
+        self.snapshot_persistence = None
+        if snapshot_path is not None:
+            if not isinstance(self.store, HashTableStore):
+                raise TypeError("snapshot persistence requires HashTableStore")
+            self.snapshot_persistence = SnapshotPersistence(snapshot_path)
+            restored = self.snapshot_persistence.load(self.store)
+            print(f"loaded {restored} entries from snapshot {snapshot_path}", flush=True)
         self.router = CommandRouter(self.store, stats=self.stats)
         super().__init__(server_address, MiniRedisHandler)
 
+    def server_close(self) -> None:
+        if self.snapshot_persistence is not None:
+            saved = self.snapshot_persistence.save(self.store)
+            print(f"saved {saved} entries to snapshot {self.snapshot_persistence.path}", flush=True)
+        super().server_close()
 
-def serve(host: str = "0.0.0.0", port: int = 6379, store: KeyValueStore | None = None) -> None:
-    with MiniRedisTCPServer((host, port), store=store) as server:
+
+def serve(
+    host: str = "0.0.0.0",
+    port: int = 6379,
+    store: KeyValueStore | None = None,
+    snapshot_path: str | None = None,
+) -> None:
+    with MiniRedisTCPServer((host, port), store=store, snapshot_path=snapshot_path) as server:
         server_host, server_port = server.server_address
         print(f"mini redis listening on {server_host}:{server_port}", flush=True)
         server.serve_forever()

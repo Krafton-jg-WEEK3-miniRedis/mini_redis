@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import socket
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 from mini_redis.server import MiniRedisTCPServer
 from mini_redis.storage import HashTableStore
@@ -158,6 +160,50 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
 
             self.assertEqual(read_reply(stream), b"+OK\r\n")
             self.assertEqual(read_reply(stream), b"")
+
+    def test_server_restores_snapshot_after_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            snapshot_path = Path(temp_dir) / "mini_redis.snapshot"
+
+            first_server = MiniRedisTCPServer(
+                ("127.0.0.1", 0),
+                store=HashTableStore(),
+                snapshot_path=str(snapshot_path),
+            )
+            first_thread = threading.Thread(target=first_server.serve_forever, daemon=True)
+            first_thread.start()
+            first_host, first_port = first_server.server_address
+
+            try:
+                with socket.create_connection((first_host, first_port), timeout=2) as conn:
+                    stream = conn.makefile("rwb")
+                    stream.write(encode_command(b"SET", b"persisted", b"value"))
+                    stream.flush()
+                    self.assertEqual(read_reply(stream), b"+OK\r\n")
+            finally:
+                first_server.shutdown()
+                first_server.server_close()
+                first_thread.join(timeout=2)
+
+            second_server = MiniRedisTCPServer(
+                ("127.0.0.1", 0),
+                store=HashTableStore(),
+                snapshot_path=str(snapshot_path),
+            )
+            second_thread = threading.Thread(target=second_server.serve_forever, daemon=True)
+            second_thread.start()
+            second_host, second_port = second_server.server_address
+
+            try:
+                with socket.create_connection((second_host, second_port), timeout=2) as conn:
+                    stream = conn.makefile("rwb")
+                    stream.write(encode_command(b"GET", b"persisted"))
+                    stream.flush()
+                    self.assertEqual(read_reply(stream), b"$5\r\nvalue\r\n")
+            finally:
+                second_server.shutdown()
+                second_server.server_close()
+                second_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
