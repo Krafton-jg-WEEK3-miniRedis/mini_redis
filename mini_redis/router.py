@@ -30,7 +30,7 @@ class ServerStats:
         with self._lock:
             self._total_commands += 1
 
-    def snapshot(self) -> tuple[int, int]:
+    def get_stats(self) -> tuple[int, int]:
         with self._lock:
             return self._total_connections, self._total_commands
 
@@ -136,7 +136,7 @@ class CommandRouter:
         )
 
     def _build_info(self) -> bytes:
-        total_connections, total_commands = self._stats.snapshot()
+        total_connections, total_commands = self._stats.get_stats()
         return (
             b"# Server\r\n"
             b"redis_version:0.2.0\r\n"
