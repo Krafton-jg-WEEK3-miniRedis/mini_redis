@@ -15,10 +15,19 @@ WELCOME_LINES = (
 )
 HELP_LINES = (
     "사용 가능한 명령어:",
-    "PING [message], ECHO <message>",
-    "SET <key> <value>, GET <key>, DEL <key> [key ...]",
-    "EXPIRE <key> <seconds>, INFO, HELLO [2|3], COMMAND",
-    "CLIENT SETINFO, QUIT, EXIT, ?, HELP",
+    "PING [메세지 == None] || PING [message]",
+    "ECHO [메세지] || ECHO <message>",
+    "SET 키 값 || SET <key> <value>",
+    "GET 키 || GET <key>",
+    "DEL 키 [키 ...] || DEL <key> [key ...]",
+    "EXPIRE 키 초 || EXPIRE <key> <seconds>",
+    "INFO || INFO",
+    "HELLO [2 또는 3] || HELLO [2|3]",
+    "COMMAND || COMMAND",
+    "CLIENT SETINFO || CLIENT SETINFO",
+    "QUIT || QUIT",
+    "EXIT || EXIT",
+    "? 또는 HELP || ? / HELP",
 )
 EMPTY_INPUT_MESSAGE = "입력된 명령이 없습니다. `?` 를 입력하면 도움말을 볼 수 있습니다."
 PROMPT = "[5조] mini-redis > "
