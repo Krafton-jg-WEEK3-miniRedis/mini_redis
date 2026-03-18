@@ -65,14 +65,13 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
             stream.flush()
             self.assertEqual(read_reply(stream), b"+OK\r\n")
 
-    def test_hello_three_is_supported(self) -> None:
+    def test_hello_three_returns_noproto_error(self) -> None:
         with socket.create_connection((self.host, self.port), timeout=2) as conn:
             stream = conn.makefile("rwb")
             stream.write(encode_command(b"HELLO", b"3"))
             stream.flush()
 
-            self.assertEqual(stream.read(1), b"*")
-            self.assertEqual(stream.readline(), b"14\r\n")
+            self.assertEqual(read_reply(stream), b"-NOPROTO unsupported protocol version\r\n")
 
     def test_invalid_resp_returns_error(self) -> None:
         with socket.create_connection((self.host, self.port), timeout=2) as conn:
