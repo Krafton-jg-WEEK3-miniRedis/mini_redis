@@ -107,6 +107,12 @@ class CommandRouterTest(unittest.TestCase):
         self.assertEqual(result.reply.error_code, "NOPROTO")
         self.assertIn("unsupported protocol version", result.reply.value)
 
+    def test_hello_accepts_protocol_version_three(self) -> None:
+        result = self.router.dispatch([b"HELLO", b"3"], 7)
+
+        self.assertEqual(result.reply.kind, "array")
+        self.assertIn(b"proto", result.reply.value)
+
     def test_hello_rejects_wrong_number_of_arguments(self) -> None:
         result = self.router.dispatch([b"HELLO", b"2", b"EXTRA"], 1)
 
