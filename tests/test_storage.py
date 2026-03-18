@@ -74,6 +74,59 @@ class HashTableStoreTests(unittest.TestCase):
         self.assertIsNone(store.get(b"ephemeral"))
         self.assertIsNone(store.get(b"stable"))
 
+    def test_capacity_is_normalized_to_power_of_two(self) -> None:
+        store = HashTableStore(bucket_count=3)
+
+        self.assertEqual(store.capacity, 4)
+
+    def test_resize_doubles_capacity_when_load_factor_is_exceeded(self) -> None:
+        store = HashTableStore(bucket_count=2, load_factor_threshold=0.5)
+
+        store.set(b"alpha", b"1")
+        store.set(b"beta", b"2")
+
+        self.assertEqual(store.capacity, 4)
+        self.assertEqual(len(store), 2)
+
+    def test_resize_preserves_existing_values(self) -> None:
+        store = HashTableStore(bucket_count=2, load_factor_threshold=0.75)
+        expected = {
+            b"alpha": b"1",
+            b"beta": b"2",
+            b"gamma": b"3",
+            b"delta": b"4",
+        }
+
+        for key, value in expected.items():
+            store.set(key, value)
+
+        self.assertEqual(store.capacity, 8)
+        for key, value in expected.items():
+            self.assertEqual(store.get(key), value)
+
+    def test_resize_discards_expired_entries(self) -> None:
+        clock = FakeClock()
+        store = HashTableStore(bucket_count=2, load_factor_threshold=1.0, clock=clock)
+        store.set(b"stale", b"old")
+        self.assertTrue(store.expire(b"stale", 1))
+        clock.advance(2)
+
+        store.set(b"fresh-1", b"1")
+        store.set(b"fresh-2", b"2")
+
+        self.assertEqual(store.capacity, 4)
+        self.assertEqual(len(store), 2)
+        self.assertIsNone(store.get(b"stale"))
+        self.assertEqual(store.get(b"fresh-1"), b"1")
+        self.assertEqual(store.get(b"fresh-2"), b"2")
+
+    def test_load_factor_reflects_current_live_entries(self) -> None:
+        store = HashTableStore(bucket_count=4)
+        store.set(b"alpha", b"1")
+        store.set(b"beta", b"2")
+
+        self.assertEqual(store.load_factor, 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()
