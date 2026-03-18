@@ -70,6 +70,11 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
             conn.sendall(b"*1\r\n+PING\r\n")
             self.assertEqual(conn.recv(1024), b"-ERR expected bulk string\r\n")
 
+    def test_invalid_bulk_terminator_returns_error(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            conn.sendall(b"*1\r\n$4\r\nPINGxx")
+            self.assertEqual(conn.recv(1024), b"-ERR invalid bulk terminator\r\n")
+
     def test_expire_command_expires_key(self) -> None:
         with socket.create_connection((self.host, self.port), timeout=2) as conn:
             stream = conn.makefile("rwb")
@@ -81,6 +86,15 @@ class MiniRedisServerIntegrationTest(unittest.TestCase):
             self.assertEqual(read_reply(stream), b"+OK\r\n")
             self.assertEqual(read_reply(stream), b":1\r\n")
             self.assertEqual(read_reply(stream), b"$-1\r\n")
+
+    def test_quit_closes_connection_after_ok(self) -> None:
+        with socket.create_connection((self.host, self.port), timeout=2) as conn:
+            stream = conn.makefile("rwb")
+            stream.write(encode_command(b"QUIT"))
+            stream.flush()
+
+            self.assertEqual(read_reply(stream), b"+OK\r\n")
+            self.assertEqual(read_reply(stream), b"")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,30 @@ class CommandRouterTest(unittest.TestCase):
         self.assertEqual(result.reply.kind, "error")
         self.assertIn("unknown command", result.reply.value)
 
+    def test_hello_rejects_unsupported_protocol_version(self) -> None:
+        result = self.router.dispatch([b"HELLO", b"9"], 7)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertEqual(result.reply.error_code, "NOPROTO")
+        self.assertIn("unsupported protocol version", result.reply.value)
+
+    def test_client_rejects_unsupported_subcommand(self) -> None:
+        result = self.router.dispatch([b"CLIENT", b"LIST"], 1)
+
+        self.assertEqual(result.reply.kind, "error")
+        self.assertIn("unsupported CLIENT subcommand", result.reply.value)
+
+    def test_info_contains_connection_and_command_stats(self) -> None:
+        self.stats.register_connection()
+        self.stats.mark_command_processed()
+        self.stats.mark_command_processed()
+
+        result = self.router.dispatch([b"INFO"], 1)
+
+        self.assertEqual(result.reply.kind, "bulk")
+        self.assertIn(b"total_connections_received:1", result.reply.value)
+        self.assertIn(b"total_commands_processed:2", result.reply.value)
+
 
 if __name__ == "__main__":
     unittest.main()
