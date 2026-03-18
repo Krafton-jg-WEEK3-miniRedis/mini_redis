@@ -13,8 +13,15 @@ WELCOME_LINES = (
     "처음이면 `?` 를 입력해 사용 가능한 명령어를 확인하세요.",
     "예시: SET name gracia",
 )
+HELP_LINES = (
+    "사용 가능한 명령어:",
+    "PING [message], ECHO <message>",
+    "SET <key> <value>, GET <key>, DEL <key> [key ...]",
+    "EXPIRE <key> <seconds>, INFO, HELLO [2|3], COMMAND",
+    "CLIENT SETINFO, QUIT, EXIT, ?, HELP",
+)
 EMPTY_INPUT_MESSAGE = "입력된 명령이 없습니다. `?` 를 입력하면 도움말을 볼 수 있습니다."
-PROMPT = "mini-redis> "
+PROMPT = "[5조] mini-redis > "
 
 
 class CliError(Exception):
@@ -137,8 +144,15 @@ def run_interactive(
                 print("\n종료합니다.", file=out)
                 return 0
 
-            if not raw.strip():
+            stripped = raw.strip()
+
+            if not stripped:
                 print(EMPTY_INPUT_MESSAGE, file=out)
+                continue
+
+            if stripped in {"?", "HELP", "help"}:
+                for line in HELP_LINES:
+                    print(line, file=out)
                 continue
 
             parts = shlex.split(raw)

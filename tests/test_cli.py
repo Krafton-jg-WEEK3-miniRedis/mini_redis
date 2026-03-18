@@ -4,7 +4,7 @@ import io
 import threading
 import unittest
 
-from mini_redis.cli import EMPTY_INPUT_MESSAGE, WELCOME_LINES, run_interactive
+from mini_redis.cli import EMPTY_INPUT_MESSAGE, HELP_LINES, PROMPT, WELCOME_LINES, run_interactive
 from mini_redis.server import MiniRedisTCPServer
 from mini_redis.storage import HashTableStore
 
@@ -51,6 +51,28 @@ class MiniRedisCliTest(unittest.TestCase):
         rendered = output.getvalue()
         self.assertEqual(exit_code, 0)
         self.assertIn(EMPTY_INPUT_MESSAGE, rendered)
+
+    def test_interactive_shows_help_for_question_mark(self) -> None:
+        answers = iter(["?", "EXIT"])
+        prompts: list[str] = []
+        output = io.StringIO()
+
+        def fake_input(prompt: str) -> str:
+            prompts.append(prompt)
+            return next(answers)
+
+        exit_code = run_interactive(
+            self.host,
+            self.port,
+            input_func=fake_input,
+            out=output,
+        )
+
+        rendered = output.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(prompts, [PROMPT, PROMPT])
+        for line in HELP_LINES:
+            self.assertIn(line, rendered)
 
 
 if __name__ == "__main__":
