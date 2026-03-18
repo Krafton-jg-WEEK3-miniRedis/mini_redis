@@ -1,6 +1,6 @@
 # Mini Redis
 
-Mini Redis는 Python으로 구현한 TCP 기반 Redis 서버입니다. 이번 프로젝트의 목표는 해시 테이블 기반 key-value 저장소를 직접 만들고, RESP2 프로토콜로 외부 클라이언트가 접근할 수 있는 Redis를 구현하는 데 있습니다. 발표와 데모는 이 README를 기준으로 진행할 수 있도록 프로젝트 목적, 구조, 실행 방법, 테스트 범위를 한 문서에 정리했습니다.
+Mini Redis는 Python으로 구현한 TCP 기반 Redis 서버입니다. 이번 프로젝트의 목표는 해시 테이블 기반 key-value 저장소를 직접 만들고, RESP2 프로토콜로 외부 클라이언트가 접근할 수 있는 Redis를 구현하는 데 있습니다.
 
 ## 프로젝트 목표
 
@@ -108,6 +108,32 @@ Mini Redis Container    MongoDB Container
 
 즉, 현재 해시 테이블은 원본 Redis의 C 구현을 그대로 복제한 구조가 아니라, Redis의 핵심 요구사항을 Python 환경에 맞게 다시 선택하고 정리한 저장소 엔진입니다.
 
+### 해시 함수 선택 과정
+
+현재 `HashTableStore`는 해시 함수를 외부에서 주입할 수 있게 열어두되, 기본값으로는 Python 내장 `hash()`를 사용합니다. 이번 결정의 목적은 "벤치마크 숫자가 가장 높은 해시 함수"를 고르는 것이 아니라, Python으로 구현한 Redis 스타일 저장소에서 가장 현실적이고 안정적인 기본 해시 전략을 정하는 데 있었습니다.
+
+우리가 중요하게 본 기준은 아래와 같습니다.
+
+- 외부 입력 키를 받는 서버 구조에서 충돌 유도 공격에 강해야 한다.
+- Python 환경에서 실제로 빠르게 동작해야 한다.
+- 현재 bucket-list chaining + resize 구조와 잘 맞아야 한다.
+- 구현 복잡도와 외부 의존성을 불필요하게 늘리지 않아야 한다.
+- 팀원이 이해하고 설명하기 쉬워야 한다.
+
+후보를 비교하면, `xxHash`와 `MurmurHash3`는 raw hashing 속도는 빠르지만 비암호학적 해시라 외부 입력을 받는 저장소의 기본 해시로 두기에는 철학이 약했습니다. 반면 `SipHash`는 충돌 공격 방어 측면에서 Redis류 저장소의 기본 철학과 가장 잘 맞았습니다.
+
+하지만 Python에서 별도 SipHash 구현을 직접 넣는 것은 오히려 비효율적일 수 있습니다. 현재 CPython의 내장 `hash()`는 C 레벨 구현이고, 로컬 Python 3.14 환경에서는 `sys.hash_info.algorithm == 'siphash13'` 기준이므로, 철학적으로는 SipHash를 따르면서도 구현은 가장 단순하고 현실적인 선택이 됩니다.
+
+이 판단은 현재 저장소 구조와도 맞습니다. 우리 저장소는 충돌이 발생하면 같은 버킷 안에서 선형 탐색을 수행하므로, 악의적으로 충돌이 유도되면 버킷 내부 탐색 비용이 커집니다. resize는 평균적인 충돌을 줄여주지만, 공격적인 입력 분산 문제를 완전히 해결하지는 못합니다. 따라서 "조금 더 빠른 평균 해시"보다 "예측하기 어려운 입력 분산"이 더 중요하다고 봤습니다.
+
+최종 결정은 아래와 같습니다.
+
+- 기본 해시 함수는 Python 내장 `hash()`를 사용한다.
+- 설계 철학은 SipHash 계열을 따른다고 설명한다.
+- `xxhash`, `mmh3` 같은 외부 해시 라이브러리는 현재 단계에서는 도입하지 않는다.
+
+즉, 결론은 "SipHash가 철학적으로 맞고, 현재 CPython에서는 `hash()`가 사실상 그 철학을 실용적으로 구현하고 있으므로 `hash()`를 채택한다"입니다.
+
 TTL 정책은 기본적으로 lazy expiration입니다. 조회나 접근 시점에 만료 여부를 확인해 즉시 제거합니다. 여기에 write-triggered active expiration을 추가해 쓰기 연산이 누적될 때 일부 버킷을 점진적으로 정리합니다. 이를 통해 접근되지 않는 expired key도 계속 쌓이지 않도록 했습니다.
 
 동시성은 correctness 우선으로 설계했습니다. 저장소의 `set`, `get`, `delete`, `expire`, `ttl`, `persist`, `get_stats`, snapshot 관련 연산은 모두 `RLock` 아래에서 동작합니다.
@@ -191,6 +217,10 @@ python3 -m unittest discover -s tests -v
 ### 벤치마크 결과
 
 저장소 마이크로벤치마크 (`python3 benchmarks/storage_benchmark.py`)
+
+- `HashTableStore`: 프로젝트의 실제 커스텀 해시 테이블 구현체
+- `DictStore`: [`benchmarks/storage_benchmark.py`](/Users/choeyeongbin/mini_redis/benchmarks/storage_benchmark.py) 안에 정의된 비교용 어댑터로, Python 내장 `dict`를 그대로 감싼 로컬 벤치마크 전용 구현체
+- 즉 아래 표의 `DictStore`는 외부 라이브러리나 별도 저장소가 아니라, "내장 `dict`를 기준선으로 삼은 비교 대상"입니다.
 
 | 대상 | key 수 | SET | GET | DEL |
 | --- | ---: | ---: | ---: | ---: |
